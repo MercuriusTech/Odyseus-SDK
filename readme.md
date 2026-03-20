@@ -7,7 +7,7 @@ The official asynchronous Python SDK for Odyseus, developed and mantained by Mer
 Clone the repository and ensure your environment is set up:
 
 ```bash
-git clone [https://github.com/yourusername/mercuriustech-python.git](https://github.com/yourusername/mercuriustech-python.git)
+git clone https://github.com/MercuriusTech/Odyseus-SDK.git
 cd mercuriustech-python
 pip install aiohttp aiortc pillow av websockets
 ```
