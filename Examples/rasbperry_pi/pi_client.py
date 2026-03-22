@@ -37,7 +37,15 @@ SETTLE_TIME = 0.3
 
 # Initialize the client. 
 # If args.base_url is None, the SDK class will use its own internal default.
-client = mt.Odyseus(api_key=args.api_key, base_url=args.url)
+# Create a dictionary for the constructor arguments
+client_kwargs = {"api_key": args.api_key}
+
+# Only add base_url if the user actually provided one via CLI
+if args.url:
+    client_kwargs["base_url"] = args.url
+
+# Unpack the dictionary into the class
+client = mt.Odyseus(**client_kwargs)
 
 # ... [The rest of your motor mapping and inference loop remains the same] ...
 
@@ -47,18 +55,18 @@ client = mt.Odyseus(api_key=args.api_key, base_url=args.url)
 def execute_motor_command(cmd_string: str):
     """Maps VLM string commands to motor_controller functions."""
     cmd = cmd_string.upper().strip()
-    
+
     if cmd == "FORWARD":
         motor_controller.move_forward(STRAIGHT_SPEED)
     elif cmd in ("BACKWARD", "BACK"):
         motor_controller.move_back(STRAIGHT_SPEED)
-    elif cmd == "LEFT":
+    elif cmd == "LEFT" or cmd=="SEARCH_LEFT":
         motor_controller.rotate_left(TURN_SPEED)
     elif cmd == "FW_LEFT":
         motor_controller.move_fw_left(STRAIGHT_SPEED * 2)
     elif cmd == "FW_RIGHT":
         motor_controller.move_fw_right(STRAIGHT_SPEED * 2)
-    elif cmd == "RIGHT":
+    elif cmd == "RIGHT" or cmd=="SEARCH_RIGHT":
         motor_controller.rotate_right(TURN_SPEED)
     elif cmd in ("STOP", "HOLD"):
         motor_controller.stop_motors()
