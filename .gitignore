@@ -1,0 +1,5 @@
+.env
+pscp.exe
+plink.exe
+*/venv/
+*/.venv/

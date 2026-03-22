@@ -49,3 +49,29 @@ Helpers for video streaming.
 Helpers specific to Unreal Engine's PixelStreaming.
 * `mt.unreal.format_ui_interaction(dict)`: Formats standard Python dicts into the exact byte-structure required by Unreal Engine's WebRTC DataChannels.
 * `mt.unreal.strip_rtx_from_sdp(sdp)`: Cleans Unreal's default SDP offers to force H.264 Constrained Baseline, ensuring cross-platform compatibility.
+
+
+## Running Examples
+
+### On Raspberry Pi
+Upload the contents of this to your pi by either git cloning the repository in the pi directly, or uploading them via the `upload.ps1` script in this folder.
+    If using `upload.ps1` make sure to create an .env file with:
+    ```bash
+    RPI_IP={your raspberry pi IP e.g. my_pi.local}
+    RPI_USER={your raspberry pi USERNAME e.g. me}
+    RPI_PASS={your rasbperry pi PASSWORD}
+    ```
+    ⚠️ Make sure not to delete the .gitignore in this repo to avoid accidentlly commiting that .env file to the public
+
+Once uploaded connect to the pi via SSH or use the `connect.ps1` script on this folder.
+
+In the `odyseus_sdk` folder run:
+```bash
+python -m venv venv
+source ./venv/bin/activate
+sudo apt-get update
+sudo apt-get install swig python3-dev
+sudo apt-get install liblgpio-dev
+pip install gpiozero lgpio rpi-lgpio
+```
+
