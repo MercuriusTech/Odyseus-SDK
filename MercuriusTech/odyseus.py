@@ -27,18 +27,26 @@ class Odyseus:
                 
                 return await resp.json()
 
-    async def connect_webrtc(self, pc: RTCPeerConnection) -> bool:
-        """Handles the WebRTC SDP handshake to connect a local video stream to the dashboard."""
+    async def connect_webrtc(self, pc: RTCPeerConnection, unreal_fix: bool = False) -> bool:
+        """Handles the WebRTC SDP handshake. Set unreal_fix=True for Unreal Engine streams."""
         offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        
+        sdp = offer.sdp
+
+        # Apply the H.264 profile fix if requested
+        if unreal_fix:
+            from .unreal import strip_rtx_from_sdp
+            sdp = strip_rtx_from_sdp(sdp)
+    
+        await pc.setLocalDescription(RTCSessionDescription(sdp=sdp, type=offer.type))
+    
         async with aiohttp.ClientSession() as session:
+            # Note: We use pc.localDescription.sdp here to ensure we send the "cleaned" version
             payload = {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-            
+
             async with session.post(f"{self.base_url}/offer-sim", json=payload, headers=self.headers) as resp:
                 if resp.status != 200:
                     return False
-                    
+
                 answer = await resp.json()
                 await pc.setRemoteDescription(
                     RTCSessionDescription(sdp=answer["sdp"], type=answer["type"])
