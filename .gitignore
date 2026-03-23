@@ -3,3 +3,6 @@ pscp.exe
 plink.exe
 */venv/
 */.venv/
+venv/
+*.egg-info/
+*.pyc
