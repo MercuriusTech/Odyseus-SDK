@@ -38,7 +38,7 @@ class LatestFrameTrack(MediaStreamTrack):
     async def recv(self) -> av.VideoFrame:
         """Returns the absolute freshest frame available at this moment."""
         await self._event.wait()
-        self._event.clear()
+        # self._event.clear()
         if self._latest is None: 
             raise Exception("Track ended")
         return self._latest

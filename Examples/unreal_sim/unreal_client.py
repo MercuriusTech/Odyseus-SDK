@@ -115,7 +115,7 @@ class OdyseusSimBridge:
         self.relay_pc.addTrack(track)
         
         # SDK Helper: Automates the entire SDP handshake with the EC2 server
-        if await client.connect_webrtc(self.relay_pc):
+        if await client.connect_webrtc(self.relay_pc, unreal_fix=True):
             logger.info("Dashboard relay established.")
         else:
             logger.error("Failed to establish Dashboard relay.")
