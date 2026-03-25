@@ -19,28 +19,37 @@ from aiortc import (
 from aiortc.sdp import candidate_from_sdp
 
 # --- IMPORT Odyseus SDK ---
-import odyseus as od
+try:
+    import odyseus as od
+except ImportError:
+    print("CRITICAL: Odyseus SDK not found. Did you run 'pip install -e .'?")
+    sys.exit(1)
 
 # ============================================================
 # ARGUMENT PARSING
 # ============================================================
 parser = argparse.ArgumentParser(description="Odyseus Unreal Sim Client")
 parser.add_argument("--api-key", type=str, required=True, help="Odyseus API Key")
-# Added optional --url in case you need to bypass the default https://odyseus.xyz
 parser.add_argument("--url", type=str, default=None, help="Optional custom Base URL")
 args = parser.parse_args()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s %(message)s")
+# Setup logging to be more verbose
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s %(levelname)-5s %(message)s",
+    datefmt="%H:%M:%S"
+)
 logger = logging.getLogger("sim_client")
 av.logging.set_level(av.logging.PANIC)
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
-UNREAL_WS_URL = "ws://127.0.0.1:80"
+# NOTE: Port 80 is often blocked by Windows System services. 
+# Unreal Pixel Streaming defaults are usually 8888 or 8080.
+UNREAL_WS_URL = "ws://127.0.0.1:80" 
 STUN_SERVERS = ["stun:stun.l.google.com:19302"]
 
-# Timing Control
 MOVE_DURATION = 1.5   
 TURN_DURATION = 1.5
 
@@ -66,27 +75,22 @@ class OdyseusSimBridge:
         logger.info("Brain active. Running inference loop...")
         while True:
             try:
-                # 1. Capture the freshest frame via SDK wrapper
                 frame = await camera_track.recv()
                 img = frame.to_image()
                 
-                # 2. Resize to VLM standard if necessary
                 if img.size != (640, 480):
                     img = img.resize((640, 480), Image.Resampling.LANCZOS)
                 
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=85)
                 
-                # 3. Call the Odyseus SDK Inference API
                 t0 = time.monotonic()
                 result = await client.infer(buf.getvalue())
                 cmd = result.get("command", "HOLD").upper()
                 logger.info(f">>> VLM DECISION: {cmd} ({time.monotonic()-t0:.2f}s)")
 
-                # 4. Execute command on Unreal via DataChannel
                 if self.unreal_dc and self.unreal_dc.readyState == "open":
                     if cmd not in ("HOLD", "STOP"):
-                        # SDK Helper: Formats dict for Unreal's byte-protocol
                         unreal_cmd = "BACK" if cmd == "BACKWARD" else cmd
                         if "SEARCH_LEFT" in cmd: unreal_cmd = "LEFT"
                         if "SEARCH_RIGHT" in cmd: unreal_cmd = "RIGHT"
@@ -114,13 +118,13 @@ class OdyseusSimBridge:
         self.relay_pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=[RTCIceServer(urls=STUN_SERVERS)]))
         self.relay_pc.addTrack(track)
         
-        # SDK Helper: Automates the entire SDP handshake with the EC2 server
         if await client.connect_webrtc(self.relay_pc, unreal_fix=True):
             logger.info("Dashboard relay established.")
         else:
-            logger.error("Failed to establish Dashboard relay.")
+            logger.error("Failed to establish Dashboard relay. Check your API Key.")
 
     async def stop(self):
+        logger.info("Shutting down bridge...")
         if self.brain_task: self.brain_task.cancel()
         if self.relay_pc: await self.relay_pc.close()
         if self.unreal_pc: await self.unreal_pc.close()
@@ -128,6 +132,7 @@ class OdyseusSimBridge:
         logger.info("Shutdown complete.")
 
     async def run(self):
+        logger.info("Initializing Unreal PeerConnection...")
         self.unreal_pc = RTCPeerConnection()
 
         @self.unreal_pc.on("datachannel")
@@ -139,46 +144,53 @@ class OdyseusSimBridge:
         def _on_track(track):
             if track.kind == "video":
                 logger.info("Received video track from Unreal.")
-                # SDK Helper: Wrap the track to ensure no latency buildup
                 latest = od.webrtc.LatestFrameTrack(track)
                 asyncio.create_task(self.setup_relay(latest))
                 self.brain_task = asyncio.create_task(self.pi_brain_loop(latest))
 
         # Standard Unreal PixelStreaming Signaling Handshake
-        async with websockets.connect(UNREAL_WS_URL) as self.ws:
-            await self.ws.send(json.dumps({"type": "request_stream"}))
-            async for raw in self.ws:
-                msg = json.loads(raw)
-                msg_type = msg.get("type")
-
-                if msg_type == "offer":
-                    # SDK Helper: Forces Unreal into H.264 Constrained Baseline
-                    fixed_sdp = od.unreal.strip_rtx_from_sdp(msg["sdp"])
-                    await self.unreal_pc.setRemoteDescription(RTCSessionDescription(sdp=fixed_sdp, type="offer"))
-                    ans = await self.unreal_pc.createAnswer()
-                    await self.unreal_pc.setLocalDescription(ans)
-                    await self.ws.send(json.dumps({"type": "answer", "sdp": self.unreal_pc.localDescription.sdp}))
+        logger.info(f"Connecting to Unreal signaling server at {UNREAL_WS_URL}...")
+        try:
+            # Added open_timeout to prevent indefinite hanging if port is wrong
+            async with websockets.connect(UNREAL_WS_URL, open_timeout=10) as self.ws:
+                logger.info("Signaling connection established.")
+                await self.ws.send(json.dumps({"type": "request_stream"}))
                 
-                elif msg_type == "iceCandidate":
-                    c = msg["candidate"]
-                    if c and "candidate" in c:
-                        cand_str = c["candidate"].split(":", 1)[1] if c["candidate"].startswith("candidate:") else c["candidate"]
-                        rtc_cand = candidate_from_sdp(cand_str)
-                        rtc_cand.sdpMid, rtc_cand.sdpMLineIndex = c["sdpMid"], c["sdpMLineIndex"]
-                        await self.unreal_pc.addIceCandidate(rtc_cand)
+                async for raw in self.ws:
+                    msg = json.loads(raw)
+                    msg_type = msg.get("type")
+
+                    if msg_type == "offer":
+                        logger.info("Received WebRTC Offer from Unreal.")
+                        fixed_sdp = od.unreal.strip_rtx_from_sdp(msg["sdp"])
+                        await self.unreal_pc.setRemoteDescription(RTCSessionDescription(sdp=fixed_sdp, type="offer"))
+                        ans = await self.unreal_pc.createAnswer()
+                        await self.unreal_pc.setLocalDescription(ans)
+                        await self.ws.send(json.dumps({"type": "answer", "sdp": self.unreal_pc.localDescription.sdp}))
+                        logger.info("Sent WebRTC Answer to Unreal.")
+                    
+                    elif msg_type == "iceCandidate":
+                        c = msg["candidate"]
+                        if c and "candidate" in c:
+                            cand_str = c["candidate"].split(":", 1)[1] if c["candidate"].startswith("candidate:") else c["candidate"]
+                            rtc_cand = candidate_from_sdp(cand_str)
+                            rtc_cand.sdpMid, rtc_cand.sdpMLineIndex = c["sdpMid"], c["sdpMLineIndex"]
+                            await self.unreal_pc.addIceCandidate(rtc_cand)
+        except (websockets.exceptions.ConnectionClosedError, ConnectionRefusedError) as e:
+            logger.error(f"Connection to Unreal failed: {e}. Is your Signaling Server running on port {UNREAL_WS_URL.split(':')[-1]}?")
+        except asyncio.TimeoutError:
+            logger.error(f"Signaling connection timed out. Check if port {UNREAL_WS_URL.split(':')[-1]} is being blocked by Windows.")
 
 # ============================================================
 # RUNNER
 # ============================================================
 if __name__ == "__main__":
-    # Required for WebRTC/Websockets on Windows
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     bridge = OdyseusSimBridge()
     loop = asyncio.get_event_loop()
 
-    # Signal handlers for clean shutdown (Linux/Mac)
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(bridge.stop()))
@@ -187,7 +199,11 @@ if __name__ == "__main__":
         logger.info("--- ODYSEUS UNREAL CLIENT STARTED ---")
         loop.run_until_complete(bridge.run())
     except KeyboardInterrupt:
-        logger.info("Stop requested.")
+        logger.info("Stop requested by user.")
+    except Exception as e:
+        # This will catch ANY crash and print the full traceback
+        logger.exception(f"FATAL SCRIPT ERROR: {e}")
     finally:
-        loop.run_until_complete(bridge.stop())
+        if loop.is_running():
+            loop.run_until_complete(bridge.stop())
         loop.close()

@@ -77,6 +77,11 @@ sudo apt-get install swig python3-dev
 sudo apt-get install liblgpio-dev
 pip install gpiozero lgpio rpi-lgpio
 ```
+
+And most important of all install the odyseus pip package:
+```bash
+pip install -e .
+```
 #### Running Example
 The Raspberry Pi example was built using this [Robot Kit](https://www.amazon.com/dp/B0DJ7BT1V5) and a Rasbperry Pi 5, but it should also run for earlier Rasbperry Pi versions
 
@@ -93,3 +98,22 @@ python ./examples/raspberry_pi/pi_client.py --api-key <YOUR-API-KEY>
 ## Unreal Project
 
 The current unreal example runs with an Unreal Simulation running Pixel Streaming. We are working on creating an executable so you can also test out the API with the Unreal Sim.
+
+#### SETUP WITH UNREAL
+Setup the venv:
+```bash
+python -m venv venv
+./venv/Scripts/Activate.ps1
+pip install -r examples/unreal_sim/requirements.txt
+```
+
+Install the pip package:
+```bash
+pip install -e .
+```
+
+#### RUNNING WITH UNREAL
+Activate the virtual environment and run
+```bash
+python .\examples\unreal_sim\unreal_client.py --api-key <YOUR API KEY>
+```
