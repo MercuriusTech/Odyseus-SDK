@@ -9,14 +9,14 @@ from aiortc.contrib.media import MediaPlayer
 # Import your local motor controller script
 import motor_controller
 
-# --- IMPORT MERCURIUSTECH SDK ---
-import MercuriusTech as mt
+# --- IMPORT Odyseus SDK ---
+import odyseus as od
 
 # ============================================================
 # ARGUMENT PARSING
 # ============================================================
 parser = argparse.ArgumentParser(description="Odyseus Pi Client")
-parser.add_argument("--api-key", type=str, required=True, help="MercuriusTech API Key")
+parser.add_argument("--api-key", type=str, required=True, help="Odyseus API Key")
 # Added optional base-url argument. default=None ensures we can check if it was used.
 parser.add_argument("--url", type=str, default=None, help="Optional custom Base URL for the API")
 args = parser.parse_args()
@@ -45,7 +45,7 @@ if args.url:
     client_kwargs["base_url"] = args.url
 
 # Unpack the dictionary into the class
-client = mt.Odyseus(**client_kwargs)
+client = od.Odyseus(**client_kwargs)
 
 # ... [The rest of your motor mapping and inference loop remains the same] ...
 
@@ -74,7 +74,7 @@ def execute_motor_command(cmd_string: str):
         logger.warning(f"Unknown command '{cmd}'. Stopping motors.")
         motor_controller.stop_motors()
 
-async def inference_loop(camera_track: mt.webrtc.LatestFrameTrack):
+async def inference_loop(camera_track: od.webrtc.LatestFrameTrack):
     logger.info("Starting inference loop...")
     while True:
         try:
@@ -111,7 +111,7 @@ async def run_client():
     player = MediaPlayer("/dev/video0", format="v4l2", options={"video_size": "640x480", "framerate": "15"})
     pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])]))
 
-    camera_track = mt.webrtc.LatestFrameTrack(player.video)
+    camera_track = od.webrtc.LatestFrameTrack(player.video)
     pc.addTrack(camera_track)
     
     if not await client.connect_webrtc(pc):

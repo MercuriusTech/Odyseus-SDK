@@ -33,7 +33,7 @@ if ($testResult -match "SHA256:([\w+/=]+)") { $fingerprint = $matches[1] }
 $authArgs = if ($fingerprint) { @("-hostkey", "SHA256:$fingerprint") } else { @() }
 
 # Check for the folder AND inject the SSH key in one silent background move
-$remote_path = "/home/$rpi_user/odyseus_sdk"
+$remote_path = "/home/$rpi_user/Odyseus-SDK"
 $setupCommand = "mkdir -p ~/.ssh && echo '$pubKey' >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && [ -d $remote_path ] && echo 'OK' || echo 'MISSING'"
 
 $checkResult = & $plinkPath @authArgs -pw $rpi_pass -batch "${rpi_user}@${rpi_ip}" $setupCommand

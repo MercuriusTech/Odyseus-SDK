@@ -18,8 +18,8 @@ from aiortc import (
 )
 from aiortc.sdp import candidate_from_sdp
 
-# --- IMPORT MERCURIUSTECH SDK ---
-import MercuriusTech as mt
+# --- IMPORT Odyseus SDK ---
+import odyseus as od
 
 # ============================================================
 # ARGUMENT PARSING
@@ -48,7 +48,7 @@ TURN_DURATION = 1.5
 client_kwargs = {"api_key": args.api_key}
 if args.url:
     client_kwargs["base_url"] = args.url
-client = mt.Odyseus(**client_kwargs)
+client = od.Odyseus(**client_kwargs)
 
 # ============================================================
 # SIMULATION BRIDGE
@@ -61,7 +61,7 @@ class OdyseusSimBridge:
         self.brain_task = None
         self.ws = None
 
-    async def pi_brain_loop(self, camera_track: mt.webrtc.LatestFrameTrack):
+    async def pi_brain_loop(self, camera_track: od.webrtc.LatestFrameTrack):
         """Processes frames and sends navigation commands back to Unreal."""
         logger.info("Brain active. Running inference loop...")
         while True:
@@ -91,15 +91,15 @@ class OdyseusSimBridge:
                         if "SEARCH_LEFT" in cmd: unreal_cmd = "LEFT"
                         if "SEARCH_RIGHT" in cmd: unreal_cmd = "RIGHT"
 
-                        payload = mt.unreal.format_ui_interaction({"command": unreal_cmd})
+                        payload = od.unreal.format_ui_interaction({"command": unreal_cmd})
                         self.unreal_dc.send(payload)
                         
                         is_turn = any(x in unreal_cmd for x in ["LEFT", "RIGHT"])
                         await asyncio.sleep(TURN_DURATION if is_turn else MOVE_DURATION)
                         
-                        self.unreal_dc.send(mt.unreal.format_ui_interaction({"command": "STOP"}))
+                        self.unreal_dc.send(od.unreal.format_ui_interaction({"command": "STOP"}))
                     else:
-                        self.unreal_dc.send(mt.unreal.format_ui_interaction({"command": "STOP"}))
+                        self.unreal_dc.send(od.unreal.format_ui_interaction({"command": "STOP"}))
                         await asyncio.sleep(0.5)
 
             except asyncio.CancelledError:
@@ -108,7 +108,7 @@ class OdyseusSimBridge:
                 logger.error(f"Brain Loop Error: {e}")
                 await asyncio.sleep(1)
 
-    async def setup_relay(self, track: mt.webrtc.LatestFrameTrack):
+    async def setup_relay(self, track: od.webrtc.LatestFrameTrack):
         """Relays the Unreal video track to the Cloud Dashboard via the SDK."""
         logger.info("Connecting to Odyseus WebRTC Relay...")
         self.relay_pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=[RTCIceServer(urls=STUN_SERVERS)]))
@@ -140,7 +140,7 @@ class OdyseusSimBridge:
             if track.kind == "video":
                 logger.info("Received video track from Unreal.")
                 # SDK Helper: Wrap the track to ensure no latency buildup
-                latest = mt.webrtc.LatestFrameTrack(track)
+                latest = od.webrtc.LatestFrameTrack(track)
                 asyncio.create_task(self.setup_relay(latest))
                 self.brain_task = asyncio.create_task(self.pi_brain_loop(latest))
 
@@ -153,7 +153,7 @@ class OdyseusSimBridge:
 
                 if msg_type == "offer":
                     # SDK Helper: Forces Unreal into H.264 Constrained Baseline
-                    fixed_sdp = mt.unreal.strip_rtx_from_sdp(msg["sdp"])
+                    fixed_sdp = od.unreal.strip_rtx_from_sdp(msg["sdp"])
                     await self.unreal_pc.setRemoteDescription(RTCSessionDescription(sdp=fixed_sdp, type="offer"))
                     ans = await self.unreal_pc.createAnswer()
                     await self.unreal_pc.setLocalDescription(ans)

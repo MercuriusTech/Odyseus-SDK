@@ -1,4 +1,5 @@
-from .odyseus import Odyseus
+# public-sdk/odyseus/__init__.py
+from .client import Odyseus
 from . import webrtc
 from . import unreal
 

@@ -41,7 +41,7 @@ $fingerprint = ""
 if ($testResult -match "SHA256:([\w+/=]+)") { $fingerprint = $matches[1] }
 $authArgs = if ($fingerprint) { @("-hostkey", "SHA256:$fingerprint") } else { @() }
 
-$remote_path = "/home/$rpi_user/odyseus_sdk"
+$remote_path = "/home/$rpi_user/Odyseus-SDK"
 & $plinkPath @authArgs -pw $rpi_pass -batch "${rpi_user}@${rpi_ip}" "mkdir -p $remote_path"
 
 # 5. Perform the Upload

@@ -54,14 +54,17 @@ Helpers specific to Unreal Engine's PixelStreaming.
 ## Running Examples
 
 ### On Raspberry Pi
-Upload the contents of this to your pi by either git cloning the repository in the pi directly, or uploading them via the `upload.ps1` script in this folder.
-    If using `upload.ps1` make sure to create an .env file with:
-    ```bash
-    RPI_IP={your raspberry pi IP e.g. my_pi.local}
-    RPI_USER={your raspberry pi USERNAME e.g. me}
-    RPI_PASS={your rasbperry pi PASSWORD}
-    ```
-    ⚠️ Make sure not to delete the .gitignore in this repo to avoid accidentlly commiting that .env file to the public
+#### SETUP
+Upload the contents of this to your pi by:
+- either git cloning the repository in the pi directly **(recommended for quick testing)**
+- Or uploading them via the `upload.ps1` script in this folder **(recommended for long-term development)**
+>If using `upload.ps1` make sure to create an .env file with:
+> ```bash
+> RPI_IP={your raspberry pi IP e.g. my_pi.local}
+> RPI_USER={your raspberry pi USERNAME e.g. me}
+> RPI_PASS={your rasbperry pi PASSWORD}
+> ```
+>> ⚠️ Make sure not to delete the .gitignore in this repo to avoid accidentlly commiting that .env file to the public
 
 Once uploaded connect to the pi via SSH or use the `connect.ps1` script on this folder.
 
@@ -74,5 +77,19 @@ sudo apt-get install swig python3-dev
 sudo apt-get install liblgpio-dev
 pip install gpiozero lgpio rpi-lgpio
 ```
+#### Running Example
+The Raspberry Pi example was built using this [Robot Kit](https://www.amazon.com/dp/B0DJ7BT1V5) and a Rasbperry Pi 5, but it should also run for earlier Rasbperry Pi versions
 
-## On Unreal
+To run the examples, make sure the `venv` is activated:
+```bash
+source ./venv/bin/activate
+```
+
+Once active then run:
+```bash
+python ./examples/raspberry_pi/pi_client.py --api-key <YOUR-API-KEY>
+```
+
+## Unreal Project
+
+The current unreal example runs with an Unreal Simulation running Pixel Streaming. We are working on creating an executable so you can also test out the API with the Unreal Sim.

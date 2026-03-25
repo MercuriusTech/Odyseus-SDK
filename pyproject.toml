@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mercuriustech"
+name = "odyseus"
 version = "0.1.0"
-description = "The official Python SDK for the MercuriusTech Odyseus API."
+description = "The official Python SDK for the Odyseus API."
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -17,4 +17,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["MercuriusTech*"]
+include = ["odyseus*"]

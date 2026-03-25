@@ -2,11 +2,11 @@ import aiohttp
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 class Odyseus:
-    """Async client for the MercuriusTech Odyseus API."""
+    """Async client for the Odyseus Odyseus API."""
     
     def __init__(self, api_key: str, base_url: str = "https://odyseus.xyz"):
         if not api_key:
-            raise ValueError("An API key is required to initialize the MercuriusTech client.")
+            raise ValueError("An API key is required to initialize the Odyseus client.")
             
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
