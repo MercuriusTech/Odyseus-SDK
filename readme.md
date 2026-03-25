@@ -1,54 +1,78 @@
 # ODYSEUS Python SDK
 
-The official asynchronous Python SDK for Odyseus, developed and mantained by MercuriusTech. This SDK makes it easy to hook up physical hardware (like a Raspberry Pi) or virtual environments (like Unreal Engine) to the Odyseus VLM reasoning engine.
+The official asynchronous Python SDK for Odyseus, developed and mantained by [Mercurius Tecnologies](https://mercurisutech.com). This SDK makes it easy to hook up physical hardware (like a Raspberry Pi) or virtual environments (like Unreal Engine) to the Odyseus VLM reasoning engine.
 
-## Installation
+## General Overview
 
-Clone the repository and ensure your environment is set up:
-
-```bash
-git clone https://github.com/MercuriusTech/Odyseus-SDK.git
-cd mercuriustech-python
-pip install aiohttp aiortc pillow av websockets
-```
-
-## Quickstart
-
-Generate an API key from your `odyseus.xyz` Web Dashboard, then import `MercuriusTech` into your scripts:
+Generate an API key from your [odyseus.xyz](https://odyseus.xyz) Web Dashboard, then use the following structure to connect your robot's camera to the Odyseus VLM brain:
 
 ```python
 import asyncio
-import MercuriusTech as mt
+import odyseus as od
+from aiortc import RTCPeerConnection
+from aiortc.contrib.media import MediaPlayer
 
 async def main():
-    # Initialize the client. By default, it targets [https://odyseus.xyz](https://odyseus.xyz)
-    client = mt.Odyseus(api_key="sk_your_api_key_here")
+    # 1. Initialize the Odyseus client
+    client = od.Odyseus(api_key="sk_your_api_key_here")
 
-    # Send an image for inference
-    with open("my_robot_view.jpg", "rb") as f:
-        image_bytes = f.read()
+    # 2. Setup your camera source (e.g., Raspberry Pi Camera)
+    player = MediaPlayer("/dev/video0", format="v4l2", options={"video_size": "640x480", "framerate": "15"})
+    pc = RTCPeerConnection()
+    
+    # Use LatestFrameTrack to ensure the AI always sees the freshest frame
+    camera_track = od.webrtc.LatestFrameTrack(player.video)
+    pc.addTrack(camera_track)
+
+    # 3. Establish the WebRTC stream to the server
+    # This stream allows the server to build a map for long-term reasoning
+    if await client.connect_webrtc(pc):
+        print("Connected! Odyseus is now watching the stream.")
+
+    # 4. Continuous Inference Loop
+    while True:
+        # Get the latest frame from the stream
+        frame = await camera_track.recv()
+        img = frame.to_image()
         
-    result = await client.infer(image_bytes)
-    print(f"Odyseus Brain commands: {result['command']}")
+        # Send frame to the VLM brain
+        result = await client.infer(img)
+        command = result.get("command", "HOLD")
+        
+        # Use these commands to drive your robot's motors:
+        # Commands include: FORWARD, BACK, LEFT, RIGHT, FW_LEFT, FW_RIGHT
+        print(f"Executing Robot Command: {command}")
+        
+        # Example: map 'FORWARD' to your motor driver
+        # my_motors.move(command) 
 
 asyncio.run(main())
 ```
 
+### Why Streaming Matters
+Unlike standalone inference, continuous streaming via `connect_webrtc` enables the Odyseus engine to maintain spatial awareness. The VLM processes these frames and returns high-level navigation strings that you can map directly to your hardware:
+
+* **`FORWARD` / `BACK`**: Linear movement.
+* **`LEFT` / `RIGHT`**: Pivot turns for scanning the environment.
+* **`FW_LEFT` / `FW_RIGHT`**: Smooth arc turns to navigate around obstacles.
+
+By using this streaming pattern, your robot moves from simple "see and react" behavior to intelligent, map-based navigation.
+
 ## SDK Modules
 
-### `mt.Odyseus`
+### `od.Odyseus`
 The core client handling authentication and API interactions.
 * `await client.infer(image_bytes)`: Evaluates a frame using the VLM and returns navigation commands.
 * `await client.connect_webrtc(pc)`: Automates the SDP handshake to stream video to your dashboard.
 
-### `mt.webrtc`
+### `od.webrtc`
 Helpers for video streaming.
-* `mt.webrtc.LatestFrameTrack(track)`: A WebRTC wrapper that safely drains video buffers, ensuring the AI brain always receives the absolute freshest frame without latency build-up.
+* `od.webrtc.LatestFrameTrack(track)`: A WebRTC wrapper that safely drains video buffers, ensuring the AI brain always receives the absolute freshest frame without latency build-up.
 
-### `mt.unreal`
+### `od.unreal`
 Helpers specific to Unreal Engine's PixelStreaming.
-* `mt.unreal.format_ui_interaction(dict)`: Formats standard Python dicts into the exact byte-structure required by Unreal Engine's WebRTC DataChannels.
-* `mt.unreal.strip_rtx_from_sdp(sdp)`: Cleans Unreal's default SDP offers to force H.264 Constrained Baseline, ensuring cross-platform compatibility.
+* `od.unreal.format_ui_interaction(dict)`: Formats standard Python dicts into the exact byte-structure required by Unreal Engine's WebRTC DataChannels.
+* `od.unreal.strip_rtx_from_sdp(sdp)`: Cleans Unreal's default SDP offers to force H.264 Constrained Baseline, ensuring cross-platform compatibility.
 
 
 ## Running Examples
