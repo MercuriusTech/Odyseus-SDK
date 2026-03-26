@@ -1,6 +1,6 @@
 # ODYSEUS Python SDK
 
-The official asynchronous Python SDK for Odyseus, developed and mantained by [Mercurius Tecnologies](https://mercurisutech.com). This SDK makes it easy to hook up physical hardware (like a Raspberry Pi) or virtual environments (like Unreal Engine) to the Odyseus VLM reasoning engine.
+The official asynchronous Python SDK for Odyseus, developed and mantained by [Mercurius Tecnologies](https://mercuriustech.com). This SDK makes it easy to hook up physical hardware (like a Raspberry Pi) or virtual environments (like Unreal Engine) to the Odyseus VLM reasoning engine.
 
 ## General Overview
 
