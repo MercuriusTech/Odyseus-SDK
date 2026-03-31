@@ -45,8 +45,6 @@ av.logging.set_level(av.logging.PANIC)
 # ============================================================
 # CONFIGURATION
 # ============================================================
-# NOTE: Port 80 is often blocked by Windows System services. 
-# Unreal Pixel Streaming defaults are usually 8888 or 8080.
 UNREAL_WS_URL = "ws://127.0.0.1:80" 
 STUN_SERVERS = ["stun:stun.l.google.com:19302"]
 
@@ -67,8 +65,15 @@ class OdyseusSimBridge:
         self.unreal_dc = None
         self.unreal_pc = None
         self.relay_pc = None
-        self.brain_task = None
         self.ws = None
+        self.tasks = set()  # Track background tasks to prevent hangs
+
+    def _create_task(self, coro):
+        """Helper to track tasks so they can be cancelled during shutdown."""
+        task = asyncio.create_task(coro)
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return task
 
     async def pi_brain_loop(self, camera_track: od.webrtc.LatestFrameTrack):
         """Processes frames and sends navigation commands back to Unreal."""
@@ -124,8 +129,17 @@ class OdyseusSimBridge:
             logger.error("Failed to establish Dashboard relay. Check your API Key.")
 
     async def stop(self):
+        """Clean shutdown of all connections and tracked tasks."""
         logger.info("Shutting down bridge...")
-        if self.brain_task: self.brain_task.cancel()
+        
+        # 1. Cancel tracked tasks (Brain Loop and Relay setup)
+        for task in list(self.tasks):
+            task.cancel()
+        
+        if self.tasks:
+            await asyncio.gather(*self.tasks, return_exceptions=True)
+
+        # 2. Close WebRTC and Signaling connections
         if self.relay_pc: await self.relay_pc.close()
         if self.unreal_pc: await self.unreal_pc.close()
         if self.ws: await self.ws.close()
@@ -145,13 +159,12 @@ class OdyseusSimBridge:
             if track.kind == "video":
                 logger.info("Received video track from Unreal.")
                 latest = od.webrtc.LatestFrameTrack(track)
-                asyncio.create_task(self.setup_relay(latest))
-                self.brain_task = asyncio.create_task(self.pi_brain_loop(latest))
+                # Use _create_task to ensure these are tracked for shutdown
+                self._create_task(self.setup_relay(latest))
+                self._create_task(self.pi_brain_loop(latest))
 
-        # Standard Unreal PixelStreaming Signaling Handshake
         logger.info(f"Connecting to Unreal signaling server at {UNREAL_WS_URL}...")
         try:
-            # Added open_timeout to prevent indefinite hanging if port is wrong
             async with websockets.connect(UNREAL_WS_URL, open_timeout=10) as self.ws:
                 logger.info("Signaling connection established.")
                 await self.ws.send(json.dumps({"type": "request_stream"}))
@@ -176,10 +189,11 @@ class OdyseusSimBridge:
                             rtc_cand = candidate_from_sdp(cand_str)
                             rtc_cand.sdpMid, rtc_cand.sdpMLineIndex = c["sdpMid"], c["sdpMLineIndex"]
                             await self.unreal_pc.addIceCandidate(rtc_cand)
+
         except (websockets.exceptions.ConnectionClosedError, ConnectionRefusedError) as e:
-            logger.error(f"Connection to Unreal failed: {e}. Is your Signaling Server running on port {UNREAL_WS_URL.split(':')[-1]}?")
+            logger.error(f"Connection to Unreal failed: {e}.")
         except asyncio.TimeoutError:
-            logger.error(f"Signaling connection timed out. Check if port {UNREAL_WS_URL.split(':')[-1]} is being blocked by Windows.")
+            logger.error(f"Signaling connection timed out.")
 
 # ============================================================
 # RUNNER
@@ -191,19 +205,24 @@ if __name__ == "__main__":
     bridge = OdyseusSimBridge()
     loop = asyncio.get_event_loop()
 
-    if sys.platform != "win32":
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(bridge.stop()))
-
     try:
         logger.info("--- ODYSEUS UNREAL CLIENT STARTED ---")
         loop.run_until_complete(bridge.run())
     except KeyboardInterrupt:
         logger.info("Stop requested by user.")
     except Exception as e:
-        # This will catch ANY crash and print the full traceback
         logger.exception(f"FATAL SCRIPT ERROR: {e}")
     finally:
-        if loop.is_running():
-            loop.run_until_complete(bridge.stop())
+        # Run the explicit bridge stop logic
+        loop.run_until_complete(bridge.stop())
+        
+        # Force-cancel any remaining loop tasks (e.g., SDK internal workers)
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        
         loop.close()
+        logger.info("Terminal control restored.")
