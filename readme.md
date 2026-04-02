@@ -26,8 +26,15 @@ async def main():
 
     # 3. Establish the WebRTC stream to the server
     # This stream allows the server to build a map for long-term reasoning
-    if await client.connect_webrtc(pc):
-        print("Connected! Odyseus is now watching the stream.")
+    try:
+        if await client.connect_webrtc(pc):
+            print("Connected! Odyseus is now watching the stream.")
+    except od.OdyseusStreamCapacityError as exc:
+        print()
+        print("STREAMING UNAVAILABLE")
+        print(str(exc))
+        print(exc.payload)
+        return
 
     # 4. Continuous Inference Loop
     while True:
@@ -64,6 +71,8 @@ By using this streaming pattern, your robot moves from simple "see and react" be
 The core client handling authentication and API interactions.
 * `await client.infer(image_bytes)`: Evaluates a frame using the VLM and returns navigation commands.
 * `await client.connect_webrtc(pc)`: Automates the SDP handshake to stream video to your dashboard.
+  Raises `od.OdyseusStreamCapacityError` on HTTP `429` when robot streaming capacity is full.
+  Raises `od.OdyseusWebRTCError` for other handshake failures.
 
 ### `od.webrtc`
 Helpers for video streaming.

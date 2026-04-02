@@ -2,6 +2,52 @@ import aiohttp
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 
+class OdyseusError(Exception):
+    """Base exception for SDK errors."""
+
+
+class OdyseusWebRTCError(OdyseusError):
+    """Raised when the WebRTC handshake fails."""
+
+    def __init__(self, message: str, *, status: int | None = None, payload: dict | None = None):
+        super().__init__(message)
+        self.status = status
+        self.payload = payload or {}
+
+
+class OdyseusStreamCapacityError(OdyseusWebRTCError):
+    """Raised when the server rejects a robot stream due to capacity limits."""
+
+    def __init__(self, message: str, *, status: int | None = None, payload: dict | None = None):
+        payload = payload or {}
+        total_slots = payload.get("total_slots")
+        used_slots = payload.get("used_slots")
+        available_slots = payload.get("available_slots")
+
+        details = ["Robot streaming is currently at capacity."]
+        if total_slots is not None and used_slots is not None:
+            details.append(f"Active robot streams: {used_slots}/{total_slots}.")
+        elif available_slots is not None:
+            details.append(f"Available robot stream slots: {available_slots}.")
+
+        details.append("This is not a bug in your client.")
+        details.append("Please wait a few seconds and try again.")
+
+        if message and message not in details:
+            details.insert(1, str(message).rstrip(".") + ".")
+
+        banner = "=" * 72
+        formatted = (
+            f"{banner}\n"
+            f"ODYSEUS STREAMING UNAVAILABLE\n"
+            f"{banner}\n"
+            f"{chr(10).join(details)}\n"
+            f"{banner}"
+        )
+
+        super().__init__(formatted, status=status, payload=payload)
+
+
 class Odyseus:
     """Async client for the Odyseus Odyseus API."""
     
@@ -85,7 +131,24 @@ class Odyseus:
 
             async with session.post(offer_url, json=payload, headers=headers) as resp:
                 if resp.status != 200:
-                    return False
+                    text = await resp.text()
+                    try:
+                        error_payload = await resp.json()
+                    except Exception:
+                        error_payload = {"raw": text}
+
+                    if resp.status == 429:
+                        raise OdyseusStreamCapacityError(
+                            error_payload.get("error", "Robot streaming capacity reached."),
+                            status=resp.status,
+                            payload=error_payload,
+                        )
+
+                    raise OdyseusWebRTCError(
+                        error_payload.get("error", f"WebRTC connection failed ({resp.status})."),
+                        status=resp.status,
+                        payload=error_payload,
+                    )
 
                 answer = await resp.json()
                 await pc.setRemoteDescription(

@@ -30,10 +30,21 @@ class LatestFrameTrack(MediaStreamTrack):
                 self._event.set()
             except (av.error.InvalidDataError, av.error.ValueError):
                 continue
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.error(f"Stream consumer died: {e}")
+                if self.readyState == "ended" or type(e).__name__ in {"MediaStreamError", "EOFError"}:
+                    logger.debug("Stream consumer ended: %s", type(e).__name__)
+                else:
+                    logger.error("Stream consumer died: %s", e)
                 self.stop()
                 break
+
+    def stop(self) -> None:
+        if not self._task.done():
+            self._task.cancel()
+        self._event.set()
+        super().stop()
 
     async def recv(self) -> av.VideoFrame:
         """Returns the absolute freshest frame available at this moment."""
