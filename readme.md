@@ -35,6 +35,10 @@ async def main():
         print(str(exc))
         print(exc.payload)
         return
+    except od.OdyseusSessionLimitError as exc:
+        print(f"SESSION LIMIT: {exc}")
+        print(exc.payload)
+        return
 
     # 4. Continuous Inference Loop
     while True:
@@ -72,6 +76,7 @@ The core client handling authentication and API interactions.
 * `await client.infer(image_bytes)`: Evaluates a frame using the VLM and returns navigation commands.
 * `await client.connect_webrtc(pc)`: Automates the SDP handshake to stream video to your dashboard.
   Raises `od.OdyseusStreamCapacityError` on HTTP `429` when robot streaming capacity is full.
+  Raises `od.OdyseusSessionLimitError` when a robot stream is blocked by the session timer or cooldown.
   Raises `od.OdyseusWebRTCError` for other handshake failures.
 
 ### `od.webrtc`
