@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import time
 from datetime import datetime
@@ -131,6 +132,15 @@ async def _fetch_stream_slots(gpu_base_url: str, api_key: str) -> dict | None:
         return None
 
 
+def _forced_state_is_new(status_payload: dict, previous_last_forced_at: str | None) -> bool:
+    last_forced_at = status_payload.get("last_forced_at")
+    if not last_forced_at:
+        return False
+    if not previous_last_forced_at:
+        return True
+    return last_forced_at != previous_last_forced_at
+
+
 class Odyseus:
     """Async client for the Odyseus Odyseus API."""
     
@@ -203,6 +213,11 @@ class Odyseus:
         await pc.setLocalDescription(RTCSessionDescription(sdp=sdp, type=offer.type))
     
         async with aiohttp.ClientSession() as session:
+            previous_status = None
+            if self._gpu_base_url:
+                previous_status = await _fetch_stream_slots(self._gpu_base_url, self.api_key)
+            previous_last_forced_at = previous_status.get("last_forced_at") if previous_status else None
+
             # Note: We use pc.localDescription.sdp here to ensure we send the "cleaned" version
             session_info = await self.resolve_webrtc_session()
             if session_info:
@@ -244,29 +259,28 @@ class Odyseus:
                     if not self._gpu_base_url:
                         return
 
-                    status_payload = await _fetch_stream_slots(self._gpu_base_url, self.api_key)
-                    if not status_payload:
-                        return
-
-                    error_code = status_payload.get("error_code")
-                    last_forced_reason = status_payload.get("last_forced_reason")
-                    last_forced_at = status_payload.get("last_forced_at")
-                    recent_force = False
-                    if last_forced_at:
-                        try:
-                            recent_force = (time.time() - datetime.fromisoformat(last_forced_at).timestamp()) <= 15
-                        except Exception:
-                            recent_force = True
-
-                    if error_code == "session_cooldown_active" or (last_forced_reason == "session_limit" and recent_force):
-                        self._session_limit_notice_emitted.add(pc_id)
-                        print(
-                            OdyseusSessionLimitError(
-                                status_payload.get("message") or status_payload.get("error") or "Robot stream session ended.",
-                                status=429,
-                                payload=status_payload,
-                            ),
-                            flush=True,
-                        )
+                    for _ in range(6):
+                        status_payload = await _fetch_stream_slots(self._gpu_base_url, self.api_key)
+                        if status_payload:
+                            error_code = status_payload.get("error_code")
+                            last_forced_reason = status_payload.get("last_forced_reason")
+                            if (
+                                error_code == "session_cooldown_active"
+                                or (
+                                    last_forced_reason == "session_limit"
+                                    and _forced_state_is_new(status_payload, previous_last_forced_at)
+                                )
+                            ):
+                                self._session_limit_notice_emitted.add(pc_id)
+                                print(
+                                    OdyseusSessionLimitError(
+                                        status_payload.get("message") or status_payload.get("error") or "Robot stream session ended.",
+                                        status=429,
+                                        payload=status_payload,
+                                    ),
+                                    flush=True,
+                                )
+                                return
+                        await asyncio.sleep(1.0)
 
                 return True
