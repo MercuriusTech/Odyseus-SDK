@@ -1,7 +1,8 @@
 import asyncio
 import aiohttp
+import contextlib
+import sys
 import time
-from datetime import datetime
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 
@@ -153,18 +154,80 @@ class Odyseus:
         self.headers = {"X-API-Key": self.api_key}
         self._gpu_base_url = None
         self._session_limit_notice_emitted: set[int] = set()
+        # Session resolution can legitimately block for several minutes while cloud-pub
+        # wakes a stopped GPU and waits for the runtime to become ready.
+        self._session_request_timeout = aiohttp.ClientTimeout(total=None, connect=30, sock_connect=30, sock_read=None)
+        self._progress_estimate_seconds = 120.0
+
+    def _render_progress_line(self, elapsed_seconds: float, *, done: bool = False) -> None:
+        percent = 100 if done else min(95, int((elapsed_seconds / self._progress_estimate_seconds) * 100))
+        filled = int(percent / 5)
+        bar = "#" * filled + "-" * (20 - filled)
+        status = "GPU ready" if done else "Preparing GPU"
+        line = f"\r{status} [{bar}] {percent:>3}%  {elapsed_seconds:>5.1f}s elapsed"
+        end = "\n" if done else ""
+        print(line, end=end, flush=True)
+
+    async def _run_with_progress(self, coro, start_message: str, wait_message: str):
+        started_at = time.monotonic()
+        if sys.stdout.isatty():
+            self._render_progress_line(0.0)
+        else:
+            print(start_message, flush=True)
+
+        task = asyncio.create_task(coro)
+
+        async def _reporter() -> None:
+            while not task.done():
+                await asyncio.sleep(1.0)
+                if task.done():
+                    return
+                elapsed = int(time.monotonic() - started_at)
+                if sys.stdout.isatty():
+                    self._render_progress_line(float(elapsed))
+                else:
+                    print(f"{wait_message} ({elapsed}s elapsed)", flush=True)
+
+        reporter = asyncio.create_task(_reporter())
+        try:
+            result = await task
+        except Exception:
+            if sys.stdout.isatty():
+                print("", flush=True)
+            raise
+        finally:
+            reporter.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reporter
+
+        elapsed = round(time.monotonic() - started_at, 1)
+        if sys.stdout.isatty():
+            self._render_progress_line(elapsed, done=True)
+        else:
+            print(f"GPU session ready after {elapsed}s.", flush=True)
+        return result
 
     async def resolve_webrtc_session(self) -> dict:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/api/webrtc/sim-session", headers=self.headers) as resp:
-                if resp.status == 404:
-                    return {}
-                if resp.status != 200:
-                    detail = await resp.text()
-                    raise Exception(f"Failed to resolve GPU session ({resp.status}): {detail}")
-                payload = await resp.json()
-                self._gpu_base_url = payload.get("gpu_base_url") or self._gpu_base_url
-                return payload
+        async def _request_session() -> dict:
+            async with aiohttp.ClientSession(timeout=self._session_request_timeout) as session:
+                async with session.post(f"{self.base_url}/api/webrtc/sim-session", headers=self.headers) as resp:
+                    if resp.status == 404:
+                        return {}
+                    if resp.status != 200:
+                        try:
+                            payload = await resp.json()
+                        except Exception:
+                            payload = {"error": await resp.text()}
+                        raise _build_limit_exception(resp.status, payload)
+                    payload = await resp.json()
+                    self._gpu_base_url = payload.get("gpu_base_url") or self._gpu_base_url
+                    return payload
+
+        return await self._run_with_progress(
+            _request_session(),
+            "Requesting GPU session from cloud-pub. The server may start a GPU if needed.",
+            "Still waiting for the assigned GPU to finish starting",
+        )
 
     async def resolve_gpu_base_url(self) -> str:
         if self._gpu_base_url:
