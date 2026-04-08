@@ -96,6 +96,33 @@ class OdyseusSessionLimitError(OdyseusError):
         self.payload = payload
 
 
+class OdyseusGPUStartupError(OdyseusWebRTCError):
+    """Raised when cloud-pub cannot start the assigned GPU instance."""
+
+    def __init__(self, message: str, *, status: int | None = None, payload: dict | None = None):
+        payload = payload or {}
+        detail = payload.get("detail")
+
+        details = ["The assigned GPU failed to start on the server side."]
+        if message:
+            details.append(str(message).rstrip(".") + ".")
+        if detail:
+            details.append(f"Server detail: {str(detail).strip()}")
+        details.append("This is usually an infrastructure issue (Lambda/EC2 start path), not a client bug.")
+        details.append("Please retry after a short wait and check server logs if it persists.")
+
+        banner = "=" * 72
+        formatted = (
+            f"{banner}\n"
+            f"ODYSEUS GPU STARTUP FAILED\n"
+            f"{banner}\n"
+            f"{chr(10).join(details)}\n"
+            f"{banner}"
+        )
+
+        super().__init__(formatted, status=status, payload=payload)
+
+
 def _build_limit_exception(status: int, payload: dict) -> OdyseusError:
     error_code = payload.get("error_code")
     if error_code in {"session_limit_exceeded", "session_cooldown_active"}:
@@ -111,6 +138,15 @@ def _build_limit_exception(status: int, payload: dict) -> OdyseusError:
             status=status,
             payload=payload,
         )
+
+    if status == 503:
+        error_text = str(payload.get("error", "")).lower()
+        if "gpu failed to start" in error_text or payload.get("detail"):
+            return OdyseusGPUStartupError(
+                payload.get("error", "GPU failed to start."),
+                status=status,
+                payload=payload,
+            )
 
     return OdyseusWebRTCError(
         payload.get("error", f"Request failed ({status})."),
