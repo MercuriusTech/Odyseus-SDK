@@ -155,3 +155,24 @@ Activate the virtual environment and run
 ```bash
 python .\examples\unreal_sim\unreal_client.py --api-key <YOUR API KEY>
 ```
+
+## Webots simulation
+
+The Webots example mirrors the Unreal bridge: it opens a **WebRTC** relay for the dashboard and runs **`infer`** on the simulated camera to drive two wheel motors. Use an **extern** controller so Webots launches your venv Python (see `examples/webots_sim/README.md`).
+
+#### SETUP WITH WEBOTS
+From `public-sdk`, create a venv, then:
+
+```bash
+pip install -r examples/webots_sim/requirements.txt
+pip install -e .
+```
+
+#### RUNNING WITH WEBOTS
+With Webots open and the robot controller set to extern, activate the venv and run:
+
+```bash
+python .\examples\webots_sim\webots_client.py --api-key <YOUR-API-KEY>
+```
+
+Use `--camera`, `--left-motor`, and `--right-motor` if your world uses different device names.
